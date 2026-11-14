@@ -1,0 +1,57 @@
+name: APK bauen
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Signierschlüssel bereitstellen
+        env:
+          KEYSTORE_B64: ${{ secrets.FRUEHFUNKE_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "FRUEHFUNKE_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Kein Signierschlüssel hinterlegt – APK wird mit wechselndem Debug-Schlüssel signiert (Updates nur nach Deinstallation)."
+          fi
+
+      - name: APK bauen
+        env:
+          FRUEHFUNKE_KEYSTORE_PASSWORD: ${{ secrets.FRUEHFUNKE_KEYSTORE_PASSWORD }}
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: APK benennen
+        run: cp app/build/outputs/apk/release/app-release.apk "fruehfunke-${{ github.run_number }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fruehfunke-${{ github.run_number }}
+          path: fruehfunke-*.apk
+
+      - name: Als Release veröffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" fruehfunke-*.apk \
+            --title "Frühfunke Build ${{ github.run_number }}" \
+            --notes "Automatisch gebaut aus ${{ github.sha }}." \
+            --latest
