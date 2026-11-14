@@ -1,7 +1,18 @@
 package de.fruehfunke.app.ui
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import de.fruehfunke.app.util.Backup
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,7 +50,52 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent { FruehfunkeTheme { AppRoot() } }
+        handleImportIntent(intent)
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleImportIntent(intent)
+    }
+
+    /** Sicherungsdatei, die aus einer anderen App (z. B. OneDrive) geöffnet oder geteilt wurde. */
+    private fun handleImportIntent(intent: Intent?) {
+        val uri: Uri = when (intent?.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND -> intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            else -> null
+        } ?: return
+        runCatching { Backup.read(this, uri) }
+            .onSuccess { Backup.pendingImport.value = it }
+            .onFailure { Toast.makeText(this, "Datei ist keine gültige Frühfunke-Sicherung", Toast.LENGTH_LONG).show() }
+        setIntent(Intent(this, MainActivity::class.java))
+    }
+}
+
+@Composable
+private fun ImportDialog() {
+    val context = LocalContext.current
+    val preview by Backup.pendingImport.collectAsStateWithLifecycle()
+    val p = preview ?: return
+    val finish: (Boolean) -> Unit = { replace ->
+        val n = Backup.apply(context, p, replace)
+        Backup.pendingImport.value = null
+        Toast.makeText(context, if (replace) "$n Wecker importiert" else "$n Wecker ergänzt", Toast.LENGTH_SHORT).show()
+    }
+    AlertDialog(
+        onDismissRequest = { Backup.pendingImport.value = null },
+        icon = { Icon(Icons.Outlined.CloudDownload, contentDescription = null) },
+        title = { Text("Sicherung importieren") },
+        text = {
+            Text(
+                "Gefunden: ${p.alarms.size} Wecker und ${p.stations.size} Radiosender.\n\n" +
+                    "„Ersetzen“ löscht die aktuellen Wecker auf diesem Gerät. „Ergänzen“ fügt nur fehlende hinzu. " +
+                    "Radiosender werden immer ergänzt.",
+            )
+        },
+        confirmButton = { TextButton(onClick = { finish(true) }) { Text("Ersetzen") } },
+        dismissButton = { TextButton(onClick = { finish(false) }) { Text("Ergänzen") } },
+    )
 }
 
 @Composable
@@ -79,6 +135,8 @@ private fun AppRoot() {
             }
         }
     }
+
+    ImportDialog()
 
     AnimatedContent(
         targetState = route,

@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.text.style.TextOverflow
 import de.fruehfunke.app.data.Station
@@ -32,7 +33,8 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.CloudDownload
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.SaveAlt
 import de.fruehfunke.app.util.Backup
 import de.fruehfunke.app.util.Sounds
 import de.fruehfunke.app.util.TimeText
@@ -76,7 +78,6 @@ fun SettingsScreen(onBack: () -> Unit) {
     val stations by StationRepository.stations.collectAsStateWithLifecycle()
     var editStation by remember { mutableStateOf<Station?>(null) }
     var showStationDialog by remember { mutableStateOf(false) }
-    var importPreview by remember { mutableStateOf<Backup.Preview?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -103,7 +104,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching { Backup.read(context, uri) }
-                .onSuccess { importPreview = it }
+                .onSuccess { Backup.pendingImport.value = it }
                 .onFailure {
                     Toast.makeText(context, "Datei ist keine gültige Frühfunke-Sicherung", Toast.LENGTH_LONG).show()
                 }
@@ -186,15 +187,23 @@ fun SettingsScreen(onBack: () -> Unit) {
 
                 Section("Sichern & Übertragen") {
                     Text(
-                        "Speichere alle Wecker und Radiosender als Datei, z. B. auf OneDrive, und importiere sie auf deinen anderen Geräten. Im Dateidialog OneDrive links im Menü auswählen.",
+                        "Teile alle Wecker und Radiosender als Datei – z. B. an OneDrive, per Mail oder Messenger. " +
+                            "Auf dem anderen Gerät die Datei antippen und mit Frühfunke öffnen, dann wird sie importiert.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilledTonalButton(onClick = { runCatching { exportLauncher.launch("fruehfunke-wecker.json") } }) {
-                            Icon(Icons.Outlined.CloudUpload, contentDescription = null)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        FilledTonalButton(onClick = {
+                            runCatching { Backup.share(context) }.onFailure {
+                                Toast.makeText(context, "Teilen nicht möglich", Toast.LENGTH_SHORT).show()
+                            }
+                        }) {
+                            Icon(Icons.Outlined.Share, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Exportieren")
+                            Text("Teilen")
                         }
                         FilledTonalButton(onClick = {
                             runCatching { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) }
@@ -203,7 +212,17 @@ fun SettingsScreen(onBack: () -> Unit) {
                             Spacer(Modifier.width(8.dp))
                             Text("Importieren")
                         }
+                        OutlinedButton(onClick = { runCatching { exportLauncher.launch("fruehfunke-wecker.json") } }) {
+                            Icon(Icons.Outlined.SaveAlt, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Als Datei speichern")
+                        }
                     }
+                    Text(
+                        "„Als Datei speichern“ ist nötig für „Automatisch sichern“: Die App hält die gespeicherte Datei dann bei jeder Änderung aktuell.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     if (settings.syncUri != null) {
                         SwitchRow(
                             title = "Automatisch sichern",
@@ -269,32 +288,4 @@ fun SettingsScreen(onBack: () -> Unit) {
         )
     }
 
-    importPreview?.let { preview ->
-        AlertDialog(
-            onDismissRequest = { importPreview = null },
-            icon = { Icon(Icons.Outlined.CloudDownload, contentDescription = null) },
-            title = { Text("Sicherung importieren") },
-            text = {
-                Text(
-                    "Gefunden: ${preview.alarms.size} Wecker und ${preview.stations.size} Radiosender.\n\n" +
-                        "„Ersetzen“ löscht deine aktuellen Wecker auf diesem Gerät. „Ergänzen“ fügt nur fehlende hinzu. " +
-                        "Radiosender werden immer ergänzt.",
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val n = Backup.apply(context, preview, replace = true)
-                    importPreview = null
-                    Toast.makeText(context, "$n Wecker importiert", Toast.LENGTH_SHORT).show()
-                }) { Text("Ersetzen") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    val n = Backup.apply(context, preview, replace = false)
-                    importPreview = null
-                    Toast.makeText(context, "$n Wecker ergänzt", Toast.LENGTH_SHORT).show()
-                }) { Text("Ergänzen") }
-            },
-        )
-    }
 }

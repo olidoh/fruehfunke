@@ -1,7 +1,12 @@
 package de.fruehfunke.app.util
 
+import android.content.ClipData
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import androidx.core.content.FileProvider
+import kotlinx.coroutines.flow.MutableStateFlow
+import java.io.File
 import de.fruehfunke.app.alarm.AlarmScheduler
 import de.fruehfunke.app.alarm.Notifications
 import de.fruehfunke.app.data.Alarm
@@ -17,6 +22,24 @@ object Backup {
     private const val FORMAT = "fruehfunke-backup"
 
     data class Preview(val alarms: List<Alarm>, val stations: List<Station>)
+
+    /** Eine geöffnete oder geteilte Sicherung, die auf Bestätigung wartet. */
+    val pendingImport = MutableStateFlow<Preview?>(null)
+
+    /** Öffnet das Android-Teilen-Menü mit der Sicherungsdatei (OneDrive, Mail, Messenger …). */
+    fun share(context: Context) {
+        val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val file = File(dir, "fruehfunke-wecker.json")
+        file.writeText(exportJson())
+        val uri = FileProvider.getUriForFile(context, context.packageName + ".files", file)
+        val send = Intent(Intent.ACTION_SEND)
+            .setType("application/json")
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .putExtra(Intent.EXTRA_SUBJECT, "Frühfunke – Wecker-Sicherung")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        send.clipData = ClipData.newRawUri("fruehfunke-wecker.json", uri)
+        context.startActivity(Intent.createChooser(send, "Wecker teilen"))
+    }
 
     /** Inhalt ohne Zeitstempel – damit lässt sich erkennen, ob sich etwas geändert hat. */
     fun content(): JSONObject = JSONObject().apply {
