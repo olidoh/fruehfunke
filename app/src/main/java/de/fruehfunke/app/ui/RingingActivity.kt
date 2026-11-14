@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.outlined.AlarmOff
+import androidx.compose.material.icons.outlined.Radio
 import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -148,6 +149,14 @@ private fun RingingScreen(info: RingInfo, onSnooze: () -> Unit, onStop: () -> Un
             if (info.label.isNotBlank()) {
                 Spacer(Modifier.height(12.dp))
                 Text(info.label, style = MaterialTheme.typography.headlineSmall, color = cs.onSurface, textAlign = TextAlign.Center)
+            }
+            if (info.source.isNotBlank()) {
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Radio, contentDescription = null, tint = cs.primary, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(info.source, style = MaterialTheme.typography.titleMedium, color = cs.primary)
+                }
             }
             if (info.snoozeCount > 0) {
                 Spacer(Modifier.height(8.dp))

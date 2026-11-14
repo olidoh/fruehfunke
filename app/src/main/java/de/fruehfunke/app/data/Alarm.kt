@@ -22,6 +22,9 @@ data class Alarm(
     val exactAt: Long = 0L,
     val ringtoneUri: String? = null,
     val ringtoneTitle: String? = null,
+    /** Internetradio als Weckton; der Klingelton dient dann als Ersatz */
+    val streamUrl: String? = null,
+    val streamName: String? = null,
     /** Wecker-Lautstärke in Prozent */
     val volume: Int = 80,
     /** Ansteigende Lautstärke über so viele Sekunden, 0 = sofort voll */
@@ -40,6 +43,7 @@ data class Alarm(
     val snoozeCount: Int = 0,
 ) {
     val isRepeating: Boolean get() = days.isNotEmpty()
+    val usesRadio: Boolean get() = streamUrl != null
     val isCountdown: Boolean get() = exactAt > 0L
     val canSnoozeAgain: Boolean get() = maxSnoozes == 0 || snoozeCount < maxSnoozes
 
@@ -55,6 +59,8 @@ data class Alarm(
         put("exactAt", exactAt)
         ringtoneUri?.let { put("ringtoneUri", it) }
         ringtoneTitle?.let { put("ringtoneTitle", it) }
+        streamUrl?.let { put("streamUrl", it) }
+        streamName?.let { put("streamName", it) }
         put("volume", volume)
         put("rampSeconds", rampSeconds)
         put("vibrate", vibrate)
@@ -86,6 +92,8 @@ data class Alarm(
                 exactAt = o.optLong("exactAt", 0L),
                 ringtoneUri = o.optString("ringtoneUri", "").takeIf { it.isNotEmpty() },
                 ringtoneTitle = o.optString("ringtoneTitle", "").takeIf { it.isNotEmpty() },
+                streamUrl = o.optString("streamUrl", "").takeIf { it.isNotEmpty() },
+                streamName = o.optString("streamName", "").takeIf { it.isNotEmpty() },
                 volume = o.optInt("volume", d.volume),
                 rampSeconds = o.optInt("rampSeconds", d.rampSeconds),
                 vibrate = o.optBoolean("vibrate", d.vibrate),

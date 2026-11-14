@@ -376,7 +376,11 @@ private fun AlarmCard(
                         style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Light),
                     )
                     Text(
-                        listOfNotNull(alarm.label.takeIf { it.isNotBlank() }, TimeText.repeatSummary(alarm))
+                        listOfNotNull(
+                            alarm.label.takeIf { it.isNotBlank() },
+                            TimeText.repeatSummary(alarm),
+                            alarm.streamName?.let { "Radio: $it" },
+                        )
                             .joinToString(" · "),
                         style = MaterialTheme.typography.titleSmall,
                         color = cs.onSurfaceVariant,

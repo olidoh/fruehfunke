@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
@@ -64,7 +65,9 @@ import de.fruehfunke.app.alarm.AlarmScheduler
 import de.fruehfunke.app.alarm.Notifications
 import de.fruehfunke.app.data.Alarm
 import de.fruehfunke.app.data.AlarmRepository
+import de.fruehfunke.app.data.StationRepository
 import de.fruehfunke.app.data.WeekParity
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.fruehfunke.app.util.Sounds
 import de.fruehfunke.app.util.TimeText
 import java.time.DayOfWeek
@@ -90,6 +93,9 @@ fun EditAlarmScreen(
         is24Hour = TimeText.is24(context),
     )
     var showDatePicker by remember { mutableStateOf(false) }
+    var useRadio by remember(alarmId) { mutableStateOf(draft.usesRadio) }
+    var showStationDialog by remember { mutableStateOf(false) }
+    val stations by StationRepository.stations.collectAsStateWithLifecycle()
 
     val ringtonePicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         if (res.resultCode == Activity.RESULT_OK) {
@@ -111,7 +117,9 @@ fun EditAlarmScreen(
 
     val save: () -> Unit = {
         val countdownDate = if (draft.isCountdown) AlarmScheduler.zoned(draft.exactAt).toLocalDate() else null
-        val toSave = draft.copy(
+        val sound = if (useRadio && draft.streamUrl != null) draft
+        else draft.copy(streamUrl = null, streamName = null)
+        val toSave = sound.copy(
             hour = timeState.hour,
             minute = timeState.minute,
             enabled = true,
@@ -218,8 +226,70 @@ fun EditAlarmScreen(
                 }
 
                 Section("Weckton") {
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = !useRadio,
+                            onClick = { useRadio = false },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                        ) { Text("Klingelton") }
+                        SegmentedButton(
+                            selected = useRadio,
+                            onClick = {
+                                useRadio = true
+                                if (draft.streamUrl == null) {
+                                    stations.firstOrNull()?.let { draft = draft.copy(streamUrl = it.url, streamName = it.name) }
+                                        ?: run { showStationDialog = true }
+                                }
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                        ) { Text("Radio") }
+                    }
+
+                    if (useRadio) {
+                        if (stations.isEmpty()) {
+                            Text(
+                                "Noch keine Sender gespeichert.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            stations.forEach { st ->
+                                FilterChip(
+                                    selected = draft.streamUrl == st.url,
+                                    onClick = { draft = draft.copy(streamUrl = st.url, streamName = st.name) },
+                                    label = { Text(st.name) },
+                                )
+                            }
+                            AssistChip(
+                                onClick = { showStationDialog = true },
+                                label = { Text("Sender hinzufügen") },
+                                leadingIcon = { Icon(Icons.Outlined.Add, contentDescription = null) },
+                            )
+                        }
+                        draft.streamUrl?.let { url ->
+                            Text(
+                                url,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            StreamPreviewButton(url = url)
+                        }
+                        Text(
+                            "Startet das Radio nicht innerhalb von 25 Sekunden (z. B. ohne WLAN), klingelt der Ersatz-Weckton.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
                     Text(
-                        draft.ringtoneTitle ?: if (draft.ringtoneUri == null) "Standard-Weckton" else "Eigener Ton",
+                        (if (useRadio) "Ersatz-Weckton: " else "") +
+                            (draft.ringtoneTitle ?: if (draft.ringtoneUri == null) "Standard-Weckton" else "Eigener Ton"),
                         style = MaterialTheme.typography.bodyLarge,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -317,6 +387,17 @@ fun EditAlarmScreen(
                 Spacer(Modifier.height(24.dp))
             }
         }
+    }
+
+    if (showStationDialog) {
+        StationDialog(
+            onDismiss = { showStationDialog = false },
+            onSaved = { st ->
+                showStationDialog = false
+                useRadio = true
+                draft = draft.copy(streamUrl = st.url, streamName = st.name)
+            },
+        )
     }
 
     if (showDatePicker) {

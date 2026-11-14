@@ -16,6 +16,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.text.style.TextOverflow
+import de.fruehfunke.app.data.Station
+import de.fruehfunke.app.data.StationRepository
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,6 +60,9 @@ fun SettingsScreen(onBack: () -> Unit) {
     val settings by AppSettings.state.collectAsStateWithLifecycle()
     var resumeTick by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resumeTick++ }
+    val stations by StationRepository.stations.collectAsStateWithLifecycle()
+    var editStation by remember { mutableStateOf<Station?>(null) }
+    var showStationDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -92,6 +103,41 @@ fun SettingsScreen(onBack: () -> Unit) {
                     )
                 }
 
+                Section("Radiosender") {
+                    if (stations.isEmpty()) {
+                        Text(
+                            "Lege Sender mit ihrer Stream-URL an und wähle sie dann im Wecker unter „Weckton → Radio“.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    stations.forEach { st ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(st.name, style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    st.url,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            IconButton(onClick = { editStation = st; showStationDialog = true }) {
+                                Icon(Icons.Outlined.Edit, contentDescription = "Bearbeiten")
+                            }
+                            IconButton(onClick = { StationRepository.delete(st.id) }) {
+                                Icon(Icons.Outlined.Delete, contentDescription = "Löschen")
+                            }
+                        }
+                    }
+                    FilledTonalButton(onClick = { editStation = null; showStationDialog = true }) {
+                        Icon(Icons.Outlined.Add, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Sender hinzufügen")
+                    }
+                }
+
                 Section("Berechtigungen") {
                     Perm.values().forEach { p ->
                         val ok = remember(resumeTick) { Permissions.granted(context, p) }
@@ -129,5 +175,13 @@ fun SettingsScreen(onBack: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (showStationDialog) {
+        StationDialog(
+            initial = editStation,
+            onDismiss = { showStationDialog = false },
+            onSaved = { showStationDialog = false },
+        )
     }
 }

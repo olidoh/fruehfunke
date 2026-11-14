@@ -20,5 +20,7 @@ Benötigte Secrets: `FRUEHFUNKE_KEYSTORE_B64` (Keystore, base64) und `FRUEHFUNKE
       Countdown, Überspringen, Duplizieren, Schlummern (Dauer, Höchstzahl), Klingeldauer,
       ansteigende Lautstärke, eigene Audiodateien, Vibration, Weckbildschirm auf dem Sperrbildschirm,
       Direct Boot (klingelt auch nach Neustart vor dem Entsperren)
+- [x] Internetradio als Weckton: Sender mit Stream-URL (auch .m3u/.pls/.m3u8) speichern, probehören,
+      pro Wecker auswählen; ohne Netz oder bei Abbruch klingelt automatisch der Ersatz-Weckton
 - [ ] Schritt 3: Sensor-Steuerung – Umdrehen, Schütteln, Power-Knopf, Näherung, Lautstärketasten
 - [ ] Schritt 4: Sprechende Uhr + Wetter (OpenWeatherMap)

@@ -8,6 +8,8 @@ data class RingInfo(
     val canSnooze: Boolean,
     val snoozeMinutes: Int,
     val snoozeCount: Int,
+    /** z. B. "Radio: WDR 2" oder Hinweis auf den Ersatzton */
+    val source: String = "",
 )
 
 /** Welcher Wecker gerade klingelt – geteilt zwischen Dienst und Weckbildschirm. */
