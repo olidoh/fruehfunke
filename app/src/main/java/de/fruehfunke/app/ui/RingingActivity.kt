@@ -1,7 +1,20 @@
 package de.fruehfunke.app.ui
 
+import android.media.AudioManager
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.WindowManager
+import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
+import de.fruehfunke.app.data.AppSettings
+import de.fruehfunke.app.data.GestureAction
+import de.fruehfunke.app.data.RingControl
+import de.fruehfunke.app.data.SettingsState
+import de.fruehfunke.app.data.VolumeKeyAction
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -78,6 +91,7 @@ class RingingActivity : ComponentActivity() {
         setShowWhenLocked(true)
         setTurnScreenOn(true)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        volumeControlStream = AudioManager.STREAM_ALARM
         enableEdgeToEdge()
         // Zurück-Taste soll den Wecker nicht versehentlich wegwischen.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -88,9 +102,11 @@ class RingingActivity : ComponentActivity() {
             FruehfunkeTheme {
                 val info by RingingState.current.collectAsStateWithLifecycle()
                 LaunchedEffect(info) { if (info == null) activity.finish() }
+                val settings by AppSettings.state.collectAsStateWithLifecycle()
                 info?.let { i ->
                     RingingScreen(
                         info = i,
+                        settings = settings,
                         onSnooze = { AlarmActions.snooze(activity, i.alarmId) },
                         onStop = { AlarmActions.stop(activity, i.alarmId) },
                     )
@@ -98,10 +114,35 @@ class RingingActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            val info = RingingState.current.value ?: return super.onKeyDown(keyCode, event)
+            when (AppSettings.state.value.volumeKeyAction) {
+                VolumeKeyAction.ADJUST -> return super.onKeyDown(keyCode, event)
+                VolumeKeyAction.BLOCK -> {}
+                VolumeKeyAction.SNOOZE -> AlarmActions.snooze(this, info.alarmId)
+                VolumeKeyAction.STOP -> AlarmActions.stop(this, info.alarmId)
+            }
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
 }
 
+/** Kurzer Hinweis, welche Gesten gerade aktiv sind. */
+private fun gestureHint(s: SettingsState): String = buildList {
+    if (s.flipAction != GestureAction.NOTHING) add("Umdrehen: ${s.flipAction.label}")
+    if (s.shakeAction != GestureAction.NOTHING) add("Schütteln: ${s.shakeAction.label}")
+    if (s.powerAction != GestureAction.NOTHING) add("Power-Knopf: ${s.powerAction.label}")
+    if (s.proximityAction != GestureAction.NOTHING) add("Annähern: ${s.proximityAction.label}")
+    if (s.volumeKeyAction == VolumeKeyAction.SNOOZE || s.volumeKeyAction == VolumeKeyAction.STOP) {
+        add("Lautstärketasten: ${s.volumeKeyAction.label}")
+    }
+}.joinToString(" · ")
+
 @Composable
-private fun RingingScreen(info: RingInfo, onSnooze: () -> Unit, onStop: () -> Unit) {
+private fun RingingScreen(info: RingInfo, settings: SettingsState, onSnooze: () -> Unit, onStop: () -> Unit) {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val now by produceState(System.currentTimeMillis()) {
@@ -167,13 +208,24 @@ private fun RingingScreen(info: RingInfo, onSnooze: () -> Unit, onStop: () -> Un
                 )
             }
             Spacer(Modifier.weight(1f))
-            SlideToAct(info.canSnooze, info.snoozeMinutes, onSnooze, onStop)
-            Spacer(Modifier.height(12.dp))
-            Text(
-                if (info.canSnooze) "Nach links: schlummern · nach rechts: stoppen" else "Nach rechts ziehen zum Stoppen",
-                style = MaterialTheme.typography.bodySmall,
-                color = cs.onSurfaceVariant,
-            )
+            if (settings.ringControl == RingControl.BUTTONS) {
+                LongPressButtons(info.canSnooze, info.snoozeMinutes, onSnooze, onStop)
+                Spacer(Modifier.height(12.dp))
+                Text("Taste lange gedrückt halten", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+            } else {
+                SlideToAct(info.canSnooze, info.snoozeMinutes, onSnooze, onStop)
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    if (info.canSnooze) "Nach links: schlummern · nach rechts: stoppen" else "Nach rechts ziehen zum Stoppen",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = cs.onSurfaceVariant,
+                )
+            }
+            val hint = gestureHint(settings)
+            if (hint.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(hint, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, textAlign = TextAlign.Center)
+            }
             Spacer(Modifier.height(16.dp))
         }
     }
@@ -249,6 +301,45 @@ private fun SlideToAct(canSnooze: Boolean, snoozeMinutes: Int, onSnooze: () -> U
             contentAlignment = Alignment.Center,
         ) {
             Icon(Icons.Filled.Alarm, contentDescription = "Wecker", tint = cs.onPrimary, modifier = Modifier.size(36.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun LongPressButtons(canSnooze: Boolean, snoozeMinutes: Int, onSnooze: () -> Unit, onStop: () -> Unit) {
+    val context = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    val hint = { Toast.makeText(context, "Bitte lange drücken", Toast.LENGTH_SHORT).show() }
+    Row(
+        Modifier.fillMaxWidth().widthIn(max = 560.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        if (canSnooze) {
+            Surface(
+                shape = RoundedCornerShape(32.dp),
+                color = cs.secondaryContainer,
+                modifier = Modifier.weight(1f).height(112.dp)
+                    .clip(RoundedCornerShape(32.dp))
+                    .combinedClickable(onClick = hint, onLongClick = onSnooze),
+            ) {
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Icon(Icons.Outlined.Snooze, contentDescription = null, tint = cs.onSecondaryContainer, modifier = Modifier.size(36.dp))
+                    Text("Schlummern · $snoozeMinutes Min.", style = MaterialTheme.typography.titleMedium, color = cs.onSecondaryContainer)
+                }
+            }
+        }
+        Surface(
+            shape = RoundedCornerShape(32.dp),
+            color = cs.errorContainer,
+            modifier = Modifier.weight(1f).height(112.dp)
+                .clip(RoundedCornerShape(32.dp))
+                .combinedClickable(onClick = hint, onLongClick = onStop),
+        ) {
+            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Icon(Icons.Outlined.AlarmOff, contentDescription = null, tint = cs.onErrorContainer, modifier = Modifier.size(36.dp))
+                Text("Stopp", style = MaterialTheme.typography.titleMedium, color = cs.onErrorContainer)
+            }
         }
     }
 }

@@ -1,7 +1,10 @@
 package de.fruehfunke.app.alarm
 
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
@@ -24,6 +27,8 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import de.fruehfunke.app.data.Alarm
 import de.fruehfunke.app.data.AlarmRepository
+import de.fruehfunke.app.data.AppSettings
+import de.fruehfunke.app.data.GestureAction
 import de.fruehfunke.app.ui.RingingActivity
 import de.fruehfunke.app.util.Sounds
 import de.fruehfunke.app.util.StreamResolver
@@ -65,6 +70,10 @@ class AlarmService : Service() {
     private var savedAlarmVolume = -1
     private var currentId = -1
     private var currentVolume = 1f
+    private var gestures: AlarmGestures? = null
+    private var screenOffReceiver: BroadcastReceiver? = null
+    private var gestureHandled = false
+    private var hapticOnShutdown = false
 
     private val alarmAttributes: AudioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ALARM)
@@ -136,6 +145,7 @@ class AlarmService : Service() {
 
         startPlayback(ringing)
         if (ringing.vibrate) startVibration()
+        startControls(id)
 
         timeoutJob?.cancel()
         timeoutJob = scope.launch {
@@ -155,6 +165,59 @@ class AlarmService : Service() {
         } catch (_: Exception) {
             // Ohne Erlaubnis übernimmt die Vollbild-Benachrichtigung.
         }
+    }
+
+    // ---------------------------------------------------------------- Steuerung
+
+    /** Sensoren und Power-Knopf je nach Einstellung überwachen. */
+    private fun startControls(id: Int) {
+        stopControls()
+        gestureHandled = false
+        val s = AppSettings.state.value
+        val useMotion = s.flipAction != GestureAction.NOTHING || s.shakeAction != GestureAction.NOTHING
+        val useProximity = s.proximityAction != GestureAction.NOTHING
+        if (useMotion || useProximity) {
+            gestures = AlarmGestures(this, s.shakeThreshold) { g ->
+                val action = when (g) {
+                    Gesture.FLIP -> AppSettings.state.value.flipAction
+                    Gesture.SHAKE -> AppSettings.state.value.shakeAction
+                    Gesture.PROXIMITY -> AppSettings.state.value.proximityAction
+                }
+                perform(id, action)
+            }.also { it.start(useMotion, useProximity) }
+        }
+        if (s.powerAction != GestureAction.NOTHING) {
+            // Bildschirm aus während des Klingelns = Power-Knopf gedrückt.
+            // Die ersten Sekunden ignorieren, solange der Weckbildschirm erst angeht.
+            val armedAt = SystemClock.elapsedRealtime() + 3_000L
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    if (SystemClock.elapsedRealtime() >= armedAt) {
+                        perform(id, AppSettings.state.value.powerAction)
+                    }
+                }
+            }
+            registerReceiver(receiver, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
+            screenOffReceiver = receiver
+        }
+    }
+
+    private fun perform(id: Int, action: GestureAction) {
+        if (currentId != id || action == GestureAction.NOTHING || gestureHandled) return
+        gestureHandled = true
+        hapticOnShutdown = AppSettings.state.value.gestureHaptics
+        when (action) {
+            GestureAction.SNOOZE -> AlarmActions.snooze(this, id)
+            GestureAction.STOP -> AlarmActions.stop(this, id)
+            GestureAction.NOTHING -> {}
+        }
+    }
+
+    private fun stopControls() {
+        gestures?.stop()
+        gestures = null
+        screenOffReceiver?.let { runCatching { unregisterReceiver(it) } }
+        screenOffReceiver = null
     }
 
     // ---------------------------------------------------------------- Wiedergabe
@@ -322,6 +385,7 @@ class AlarmService : Service() {
     }
 
     private fun stopPlayback() {
+        stopControls()
         rampJob?.cancel()
         rampJob = null
         streamJob?.cancel()
@@ -349,6 +413,12 @@ class AlarmService : Service() {
     private fun shutdown() {
         timeoutJob?.cancel()
         stopPlayback()
+        if (hapticOnShutdown) {
+            hapticOnShutdown = false
+            // Kurze Rückmeldung, dass die Geste erkannt wurde
+            getSystemService(VibratorManager::class.java).defaultVibrator
+                .vibrate(VibrationEffect.createOneShot(150, VibrationEffect.DEFAULT_AMPLITUDE))
+        }
         currentId = -1
         RingingState.current.value = null
         wakeLock?.let { if (it.isHeld) it.release() }

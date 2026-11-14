@@ -24,5 +24,6 @@ Benötigte Secrets: `FRUEHFUNKE_KEYSTORE_B64` (Keystore, base64) und `FRUEHFUNKE
       pro Wecker auswählen; ohne Netz oder bei Abbruch klingelt automatisch der Ersatz-Weckton
 - [x] Export/Import aller Wecker und Sender als JSON (z. B. OneDrive), Ersetzen oder Ergänzen,
       optional automatische Sicherung in die Exportdatei bei jeder Änderung
-- [ ] Schritt 3: Sensor-Steuerung – Umdrehen, Schütteln, Power-Knopf, Näherung, Lautstärketasten
+- [x] Schritt 3: Steuerung beim Klingeln – Umdrehen, Schütteln (einstellbar, mit Sensortest), Power-Knopf,
+      Annähern, Lautstärketasten (Lautstärke/Sperren/Schlummern/Stopp), Wischen oder lange gedrückte Tasten
 - [ ] Schritt 4: Sprechende Uhr + Wetter (OpenWeatherMap)
