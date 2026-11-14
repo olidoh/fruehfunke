@@ -23,6 +23,19 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.text.style.TextOverflow
 import de.fruehfunke.app.data.Station
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material3.AlertDialog
+import de.fruehfunke.app.util.Backup
+import de.fruehfunke.app.util.Sounds
+import de.fruehfunke.app.util.TimeText
 import de.fruehfunke.app.data.StationRepository
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -53,7 +66,7 @@ import de.fruehfunke.app.data.ThemeMode
 import de.fruehfunke.app.util.Perm
 import de.fruehfunke.app.util.Permissions
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -63,6 +76,39 @@ fun SettingsScreen(onBack: () -> Unit) {
     val stations by StationRepository.stations.collectAsStateWithLifecycle()
     var editStation by remember { mutableStateOf<Station?>(null) }
     var showStationDialog by remember { mutableStateOf(false) }
+    var importPreview by remember { mutableStateOf<Backup.Preview?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            val ok = Backup.write(context, uri)
+            if (ok) {
+                AppSettings.update {
+                    it.copy(
+                        syncUri = uri.toString(),
+                        syncName = Sounds.fileName(context, uri) ?: "Sicherungsdatei",
+                        lastSync = System.currentTimeMillis(),
+                    )
+                }
+            }
+            Toast.makeText(context, if (ok) "Wecker exportiert" else "Export fehlgeschlagen", Toast.LENGTH_SHORT).show()
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { Backup.read(context, uri) }
+                .onSuccess { importPreview = it }
+                .onFailure {
+                    Toast.makeText(context, "Datei ist keine gültige Frühfunke-Sicherung", Toast.LENGTH_LONG).show()
+                }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -138,6 +184,44 @@ fun SettingsScreen(onBack: () -> Unit) {
                     }
                 }
 
+                Section("Sichern & Übertragen") {
+                    Text(
+                        "Speichere alle Wecker und Radiosender als Datei, z. B. auf OneDrive, und importiere sie auf deinen anderen Geräten. Im Dateidialog OneDrive links im Menü auswählen.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(onClick = { runCatching { exportLauncher.launch("fruehfunke-wecker.json") } }) {
+                            Icon(Icons.Outlined.CloudUpload, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Exportieren")
+                        }
+                        FilledTonalButton(onClick = {
+                            runCatching { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) }
+                        }) {
+                            Icon(Icons.Outlined.CloudDownload, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Importieren")
+                        }
+                    }
+                    if (settings.syncUri != null) {
+                        SwitchRow(
+                            title = "Automatisch sichern",
+                            subtitle = "Jede Änderung wird in „${settings.syncName ?: "Sicherungsdatei"}“ gespeichert" +
+                                (if (settings.lastSync > 0L) " · zuletzt " + TimeText.dayAndTime(context, settings.lastSync) else ""),
+                            checked = settings.autoSync,
+                            onChange = { v ->
+                                AppSettings.update { it.copy(autoSync = v) }
+                                if (v) {
+                                    val ok = Backup.write(context, Uri.parse(settings.syncUri))
+                                    if (ok) AppSettings.update { it.copy(lastSync = System.currentTimeMillis()) }
+                                    else Toast.makeText(context, "Datei nicht erreichbar – bitte erneut exportieren", Toast.LENGTH_LONG).show()
+                                }
+                            },
+                        )
+                    }
+                }
+
                 Section("Berechtigungen") {
                     Perm.values().forEach { p ->
                         val ok = remember(resumeTick) { Permissions.granted(context, p) }
@@ -182,6 +266,35 @@ fun SettingsScreen(onBack: () -> Unit) {
             initial = editStation,
             onDismiss = { showStationDialog = false },
             onSaved = { showStationDialog = false },
+        )
+    }
+
+    importPreview?.let { preview ->
+        AlertDialog(
+            onDismissRequest = { importPreview = null },
+            icon = { Icon(Icons.Outlined.CloudDownload, contentDescription = null) },
+            title = { Text("Sicherung importieren") },
+            text = {
+                Text(
+                    "Gefunden: ${preview.alarms.size} Wecker und ${preview.stations.size} Radiosender.\n\n" +
+                        "„Ersetzen“ löscht deine aktuellen Wecker auf diesem Gerät. „Ergänzen“ fügt nur fehlende hinzu. " +
+                        "Radiosender werden immer ergänzt.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val n = Backup.apply(context, preview, replace = true)
+                    importPreview = null
+                    Toast.makeText(context, "$n Wecker importiert", Toast.LENGTH_SHORT).show()
+                }) { Text("Ersetzen") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    val n = Backup.apply(context, preview, replace = false)
+                    importPreview = null
+                    Toast.makeText(context, "$n Wecker ergänzt", Toast.LENGTH_SHORT).show()
+                }) { Text("Ergänzen") }
+            },
         )
     }
 }

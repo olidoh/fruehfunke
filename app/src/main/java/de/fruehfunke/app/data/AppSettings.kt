@@ -11,6 +11,11 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 data class SettingsState(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColor: Boolean = true,
+    /** Datei (z. B. auf OneDrive), in die automatisch gesichert wird */
+    val syncUri: String? = null,
+    val syncName: String? = null,
+    val autoSync: Boolean = false,
+    val lastSync: Long = 0L,
 )
 
 object AppSettings {
@@ -25,6 +30,10 @@ object AppSettings {
             themeMode = runCatching { ThemeMode.valueOf(prefs.getString("theme", "SYSTEM")!!) }
                 .getOrDefault(ThemeMode.SYSTEM),
             dynamicColor = prefs.getBoolean("dynamic", true),
+            syncUri = prefs.getString("syncUri", null),
+            syncName = prefs.getString("syncName", null),
+            autoSync = prefs.getBoolean("autoSync", false),
+            lastSync = prefs.getLong("lastSync", 0L),
         )
     }
 
@@ -34,6 +43,10 @@ object AppSettings {
         prefs.edit()
             .putString("theme", next.themeMode.name)
             .putBoolean("dynamic", next.dynamicColor)
+            .putString("syncUri", next.syncUri)
+            .putString("syncName", next.syncName)
+            .putBoolean("autoSync", next.autoSync)
+            .putLong("lastSync", next.lastSync)
             .apply()
     }
 }
