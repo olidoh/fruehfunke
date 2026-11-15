@@ -81,5 +81,23 @@ def main():
         raise
 
 
+def _annotate(msg):
+    """Fehlermeldung als GitHub-Annotation ausgeben (über die API lesbar, auch ohne Log-Zugriff)."""
+    clean = " ".join(str(msg).split())[:900]
+    print(f"::error::Google Play: {clean}")
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except HttpError as e:
+        detail = e.content.decode("utf-8", "replace") if getattr(e, "content", None) else str(e)
+        _annotate(f"HTTP {e.resp.status} – {detail}")
+        sys.exit(1)
+    except SystemExit as e:
+        if e.code not in (0, None) and not isinstance(e.code, int):
+            _annotate(e.code)
+        raise
+    except Exception as e:
+        _annotate(f"{type(e).__name__}: {e}")
+        sys.exit(1)
