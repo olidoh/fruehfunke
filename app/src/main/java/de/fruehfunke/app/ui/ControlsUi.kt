@@ -1,7 +1,5 @@
 package de.fruehfunke.app.ui
 
-import android.os.VibrationEffect
-import android.os.VibratorManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +28,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.fruehfunke.app.alarm.AlarmGestures
+import de.fruehfunke.app.alarm.Posture
+import de.fruehfunke.app.util.Haptics
+import android.widget.Toast
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import de.fruehfunke.app.data.AppSettings
 import de.fruehfunke.app.data.GestureAction
 import de.fruehfunke.app.data.RingControl
@@ -158,24 +162,28 @@ fun SensorTestDialog(onDismiss: () -> Unit) {
     val s by AppSettings.state.collectAsStateWithLifecycle()
     var motion by remember { mutableFloatStateOf(0f) }
     var peak by remember { mutableFloatStateOf(0f) }
-    var faceDown by remember { mutableStateOf(false) }
+    var gravityZ by remember { mutableFloatStateOf(0f) }
+    var posture by remember { mutableStateOf<Posture?>(null) }
     var near by remember { mutableStateOf<Boolean?>(null) }
-    var lastGesture by remember { mutableStateOf("–") }
+    var samples by remember { mutableIntStateOf(0) }
+    var history by remember { mutableStateOf(listOf<String>()) }
 
     val detector = remember {
         AlarmGestures(context, s.shakeThreshold) { g ->
-            lastGesture = g.label
-            context.getSystemService(VibratorManager::class.java).defaultVibrator
-                .vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE))
+            val time = java.time.LocalTime.now().withNano(0).toString()
+            history = (listOf("$time  ${g.label}") + history).take(4)
+            if (AppSettings.state.value.gestureHaptics) Haptics.pulse(context)
         }
     }
     detector.shakeThreshold = s.shakeThreshold
     DisposableEffect(detector) {
         detector.onSample = { sample ->
             if (sample.motion >= 0f) {
+                samples++
                 motion = sample.motion
                 if (sample.motion > peak) peak = sample.motion
-                faceDown = sample.faceDown
+                gravityZ = sample.gravityZ
+                posture = sample.posture
             }
             near = sample.near
         }
@@ -187,16 +195,19 @@ fun SensorTestDialog(onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text("Sensoren testen") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (!detector.hasAccelerometer) {
+                    Text("Dieses Gerät meldet keinen Bewegungssensor.", color = MaterialTheme.colorScheme.error)
+                } else if (samples == 0) {
+                    Text(
+                        "Noch keine Sensordaten empfangen. Ist in den Schnelleinstellungen „Sensoren aus“ aktiv?",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 Text("Bewegung: ${motion.roundToInt()} m/s² · Höchstwert ${peak.roundToInt()} m/s²")
                 LinearProgressIndicator(
                     progress = { (motion / 30f).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().height(10.dp),
-                )
-                Text(
-                    "Schütteln wird erkannt ab ${s.shakeThreshold.roundToInt()} m/s² (zweimal kurz hintereinander).",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 SliderRow(
                     title = "Schüttel-Stärke",
@@ -205,7 +216,18 @@ fun SensorTestDialog(onDismiss: () -> Unit) {
                     range = 6f..30f,
                     onChange = { v -> AppSettings.update { it.copy(shakeThreshold = (v * 2).roundToInt() / 2f) } },
                 )
-                Text("Lage: " + if (faceDown) "Display unten" else "Display oben / aufrecht")
+                Text(
+                    "Schütteln zählt, wenn der Balken zweimal kurz hintereinander über die Stärke geht.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text("Lage: ${posture?.label ?: "–"} (z = ${"%.1f".format(gravityZ)})")
+                Text(
+                    "Zum Testen das Gerät flach mit dem Display nach unten legen, kurz warten und wieder umdrehen – " +
+                        "„Umgedreht“ erscheint dann unten in der Liste.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Text(
                     "Nähe: " + when (near) {
                         null -> if (detector.hasProximity) "–" else "kein Sensor"
@@ -213,13 +235,23 @@ fun SensorTestDialog(onDismiss: () -> Unit) {
                         false -> "fern"
                     }
                 )
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Zuletzt erkannt: ", style = MaterialTheme.typography.titleMedium)
-                    Text(lastGesture, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                Text("Erkannt:", style = MaterialTheme.typography.titleMedium)
+                if (history.isEmpty()) Text("–") else history.forEach {
+                    Text(it, color = MaterialTheme.colorScheme.primary)
                 }
+                Text(
+                    "Messwerte: $samples",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Fertig") } },
+        dismissButton = {
+            TextButton(onClick = {
+                if (Haptics.available(context)) Haptics.pulse(context)
+                else Toast.makeText(context, "Kein Vibrationsmotor gefunden", Toast.LENGTH_SHORT).show()
+            }) { Text("Vibration testen") }
+        },
     )
 }

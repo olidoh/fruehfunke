@@ -416,8 +416,7 @@ class AlarmService : Service() {
         if (hapticOnShutdown) {
             hapticOnShutdown = false
             // Kurze Rückmeldung, dass die Geste erkannt wurde
-            getSystemService(VibratorManager::class.java).defaultVibrator
-                .vibrate(VibrationEffect.createOneShot(150, VibrationEffect.DEFAULT_AMPLITUDE))
+            de.fruehfunke.app.util.Haptics.pulse(this)
         }
         currentId = -1
         RingingState.current.value = null
