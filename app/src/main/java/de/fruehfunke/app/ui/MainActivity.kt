@@ -113,6 +113,9 @@ private fun AppRoot() {
         }
     }
 
+    // Wetter beim Öffnen der App auffrischen, damit es beim Wecken schon vorliegt
+    LaunchedEffect(Unit) { de.fruehfunke.app.util.Weather.refresh() }
+
     BackHandler(enabled = route != "list") { route = "list" }
 
     val showSaved: (Alarm) -> Unit = { alarm ->

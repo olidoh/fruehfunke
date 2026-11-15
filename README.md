@@ -26,4 +26,6 @@ Benötigte Secrets: `FRUEHFUNKE_KEYSTORE_B64` (Keystore, base64) und `FRUEHFUNKE
       optional automatische Sicherung in die Exportdatei bei jeder Änderung
 - [x] Schritt 3: Steuerung beim Klingeln – Umdrehen, Schütteln (einstellbar, mit Sensortest), Power-Knopf,
       Annähern, Lautstärketasten (Lautstärke/Sperren/Schlummern/Stopp), Wischen oder lange gedrückte Tasten
-- [ ] Schritt 4: Sprechende Uhr + Wetter (OpenWeatherMap)
+- [x] Schritt 4: Sprechende Uhr – Ansage mit Textbausteinen (Uhrzeit, Wochentag, Datum, Name, Wetter),
+      Weckton wird währenddessen leiser, Verzögerung und Wiederholung einstellbar; Wetter von Open-Meteo
+      (ohne API-Schlüssel) mit Ortssuche, Anzeige auf dem Weckbildschirm

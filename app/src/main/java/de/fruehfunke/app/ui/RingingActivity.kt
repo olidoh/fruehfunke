@@ -199,6 +199,11 @@ private fun RingingScreen(info: RingInfo, settings: SettingsState, onSnooze: () 
                     Text(info.source, style = MaterialTheme.typography.titleMedium, color = cs.primary)
                 }
             }
+            val weather by de.fruehfunke.app.util.Weather.latest.collectAsStateWithLifecycle()
+            weather?.takeIf { System.currentTimeMillis() - it.fetchedAt < 3 * 60 * 60_000L && it.place == settings.weatherName }?.let { w ->
+                Spacer(Modifier.height(8.dp))
+                Text(weatherLine(w), style = MaterialTheme.typography.titleMedium, color = cs.onSurfaceVariant)
+            }
             if (info.snoozeCount > 0) {
                 Spacer(Modifier.height(8.dp))
                 Text(

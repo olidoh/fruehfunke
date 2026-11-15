@@ -26,6 +26,7 @@ class FruehfunkeApp : Application() {
         AppSettings.init(this)
         AlarmRepository.init(this)
         StationRepository.init(this)
+        de.fruehfunke.app.util.Weather.init(this)
         Notifications.createChannels(this)
         AlarmScheduler.rescheduleAll(this)
         startAutoSync()

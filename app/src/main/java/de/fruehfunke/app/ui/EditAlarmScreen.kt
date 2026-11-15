@@ -336,6 +336,12 @@ fun EditAlarmScreen(
                         checked = draft.vibrate,
                         onChange = { draft = draft.copy(vibrate = it) },
                     )
+                    SwitchRow(
+                        title = "Zeitansage",
+                        subtitle = "Uhrzeit und Wetter vorlesen – Text und Ort in den Einstellungen",
+                        checked = draft.speak,
+                        onChange = { draft = draft.copy(speak = it) },
+                    )
                 }
 
                 Section("Schlummern & Klingeldauer") {

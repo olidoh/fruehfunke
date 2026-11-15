@@ -152,6 +152,8 @@ fun SettingsScreen(onBack: () -> Unit) {
 
                 ControlsSection()
 
+                SpeechSection()
+
                 Section("Radiosender") {
                     if (stations.isEmpty()) {
                         Text(

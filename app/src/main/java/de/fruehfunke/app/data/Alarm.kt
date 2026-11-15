@@ -30,6 +30,8 @@ data class Alarm(
     /** Ansteigende Lautstärke über so viele Sekunden, 0 = sofort voll */
     val rampSeconds: Int = 30,
     val vibrate: Boolean = true,
+    /** Sprechende Uhr: Ansage beim Wecken */
+    val speak: Boolean = false,
     val snoozeMinutes: Int = 9,
     /** 0 = unbegrenzt */
     val maxSnoozes: Int = 0,
@@ -64,6 +66,7 @@ data class Alarm(
         put("volume", volume)
         put("rampSeconds", rampSeconds)
         put("vibrate", vibrate)
+        put("speak", speak)
         put("snoozeMinutes", snoozeMinutes)
         put("maxSnoozes", maxSnoozes)
         put("ringMinutes", ringMinutes)
@@ -97,6 +100,7 @@ data class Alarm(
                 volume = o.optInt("volume", d.volume),
                 rampSeconds = o.optInt("rampSeconds", d.rampSeconds),
                 vibrate = o.optBoolean("vibrate", d.vibrate),
+                speak = o.optBoolean("speak", false),
                 snoozeMinutes = o.optInt("snoozeMinutes", d.snoozeMinutes),
                 maxSnoozes = o.optInt("maxSnoozes", d.maxSnoozes),
                 ringMinutes = o.optInt("ringMinutes", d.ringMinutes),

@@ -13,7 +13,10 @@ import android.media.MediaPlayer
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.net.wifi.WifiManager
+import android.os.Bundle
 import android.os.IBinder
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.os.PowerManager
 import android.os.SystemClock
 import android.os.VibrationAttributes
@@ -31,7 +34,15 @@ import de.fruehfunke.app.data.AppSettings
 import de.fruehfunke.app.data.GestureAction
 import de.fruehfunke.app.ui.RingingActivity
 import de.fruehfunke.app.util.Sounds
+import de.fruehfunke.app.util.SpeechText
 import de.fruehfunke.app.util.StreamResolver
+import de.fruehfunke.app.util.Weather
+import kotlinx.coroutines.async
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.Locale
+import java.util.UUID
+import kotlin.coroutines.resume
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -71,6 +82,10 @@ class AlarmService : Service() {
     private var currentId = -1
     private var currentVolume = 1f
     private var gestures: AlarmGestures? = null
+    private var tts: TextToSpeech? = null
+    private var speakJob: Job? = null
+    /** Weckton-Lautstärke während einer Ansage absenken */
+    private var duck = 1f
     private var screenOffReceiver: BroadcastReceiver? = null
     private var gestureHandled = false
     private var hapticOnShutdown = false
@@ -146,6 +161,7 @@ class AlarmService : Service() {
         startPlayback(ringing)
         if (ringing.vibrate) startVibration()
         startControls(id)
+        startSpeaking(ringing)
 
         timeoutJob?.cancel()
         timeoutJob = scope.launch {
@@ -165,6 +181,91 @@ class AlarmService : Service() {
         } catch (_: Exception) {
             // Ohne Erlaubnis übernimmt die Vollbild-Benachrichtigung.
         }
+    }
+
+    // ---------------------------------------------------------------- Sprechende Uhr
+
+    private fun startSpeaking(alarm: Alarm) {
+        if (!alarm.speak) return
+        speakJob?.cancel()
+        speakJob = scope.launch {
+            val s = AppSettings.state.value
+            // Wetter schon während der Verzögerung laden
+            val weather = async {
+                if (SpeechText.needsWeather(s.speakText)) Weather.refresh(maxAgeMs = 20 * 60_000L) else null
+            }
+            delay(s.speakDelaySec * 1000L)
+            val w = withTimeoutOrNull(12_000L) { weather.await() }
+            val engine = initTts() ?: return@launch
+            tts = engine
+            while (isActive) {
+                val text = SpeechText.build(AppSettings.state.value, alarm, w)
+                duck = 0.15f
+                pushVolume()
+                engine.speakAndWait(text)
+                duck = 1f
+                pushVolume()
+                val repeat = AppSettings.state.value.speakRepeatMin
+                if (repeat <= 0) break
+                delay(repeat * 60_000L)
+            }
+        }
+    }
+
+    private suspend fun initTts(): TextToSpeech? = suspendCancellableCoroutine { cont ->
+        var engine: TextToSpeech? = null
+        engine = TextToSpeech(this) { status ->
+            val e = engine
+            if (status == TextToSpeech.SUCCESS && e != null) {
+                e.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                val r = e.setLanguage(Locale.GERMANY)
+                if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) e.setLanguage(Locale.getDefault())
+                if (cont.isActive) cont.resume(e)
+            } else {
+                e?.shutdown()
+                if (cont.isActive) cont.resume(null)
+            }
+        }
+        cont.invokeOnCancellation { engine?.shutdown() }
+    }
+
+    private suspend fun TextToSpeech.speakAndWait(text: String) {
+        val id = UUID.randomUUID().toString()
+        withTimeoutOrNull(60_000L) {
+            suspendCancellableCoroutine<Unit> { cont ->
+                setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) {
+                        if (utteranceId == id && cont.isActive) cont.resume(Unit)
+                    }
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) {
+                        if (utteranceId == id && cont.isActive) cont.resume(Unit)
+                    }
+                    override fun onError(utteranceId: String?, errorCode: Int) {
+                        if (utteranceId == id && cont.isActive) cont.resume(Unit)
+                    }
+                })
+                speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), id)
+                cont.invokeOnCancellation { stop() }
+            }
+        }
+    }
+
+    private fun stopSpeaking() {
+        speakJob?.cancel()
+        speakJob = null
+        tts?.let {
+            runCatching { it.stop() }
+            it.shutdown()
+        }
+        tts = null
+        duck = 1f
     }
 
     // ---------------------------------------------------------------- Steuerung
@@ -267,15 +368,20 @@ class AlarmService : Service() {
 
     private fun applyVolume(v: Float) {
         currentVolume = v
-        player?.setVolume(v, v)
-        stream?.volume = v
+        pushVolume()
+    }
+
+    private fun pushVolume() {
+        val eff = currentVolume * duck
+        player?.setVolume(eff, eff)
+        stream?.volume = eff
     }
 
     private fun startRingtone(alarm: Alarm) {
         val wanted = alarm.ringtoneUri?.let { Uri.parse(it) }
         val mp = (wanted?.let { createPlayer(it) }) ?: createPlayer(Sounds.defaultUri()) ?: return
         player = mp
-        mp.setVolume(currentVolume, currentVolume)
+        mp.setVolume(currentVolume * duck, currentVolume * duck)
         mp.start()
     }
 
@@ -323,7 +429,7 @@ class AlarmService : Service() {
                     .build(),
                 false,
             )
-            exo.volume = currentVolume
+            exo.volume = currentVolume * duck
             exo.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(state: Int) {
                     if (state == Player.STATE_READY && !streamRunning) {
@@ -386,6 +492,7 @@ class AlarmService : Service() {
 
     private fun stopPlayback() {
         stopControls()
+        stopSpeaking()
         rampJob?.cancel()
         rampJob = null
         streamJob?.cancel()

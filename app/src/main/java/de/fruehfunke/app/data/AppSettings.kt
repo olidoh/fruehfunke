@@ -35,6 +35,15 @@ data class SettingsState(
     /** Mindest-Beschleunigung fürs Schütteln in m/s² */
     val shakeThreshold: Float = 14f,
     val gestureHaptics: Boolean = true,
+    // Sprechende Uhr & Wetter
+    val speakText: String = de.fruehfunke.app.util.SpeechText.DEFAULT_TEXT,
+    val speakFallback: String = de.fruehfunke.app.util.SpeechText.DEFAULT_FALLBACK,
+    val speakDelaySec: Int = 10,
+    /** 0 = nur einmal */
+    val speakRepeatMin: Int = 0,
+    val weatherName: String? = null,
+    val weatherLat: Double? = null,
+    val weatherLon: Double? = null,
 )
 
 object AppSettings {
@@ -64,6 +73,13 @@ object AppSettings {
             volumeKeyAction = prefs.enumOf("volumeKeyAction", d.volumeKeyAction),
             shakeThreshold = prefs.getFloat("shakeThreshold", d.shakeThreshold),
             gestureHaptics = prefs.getBoolean("gestureHaptics", d.gestureHaptics),
+            speakText = prefs.getString("speakText", d.speakText) ?: d.speakText,
+            speakFallback = prefs.getString("speakFallback", d.speakFallback) ?: d.speakFallback,
+            speakDelaySec = prefs.getInt("speakDelaySec", d.speakDelaySec),
+            speakRepeatMin = prefs.getInt("speakRepeatMin", d.speakRepeatMin),
+            weatherName = prefs.getString("weatherName", null),
+            weatherLat = prefs.getString("weatherLat", null)?.toDoubleOrNull(),
+            weatherLon = prefs.getString("weatherLon", null)?.toDoubleOrNull(),
         )
     }
 
@@ -85,6 +101,13 @@ object AppSettings {
             .putString("volumeKeyAction", n.volumeKeyAction.name)
             .putFloat("shakeThreshold", n.shakeThreshold)
             .putBoolean("gestureHaptics", n.gestureHaptics)
+            .putString("speakText", n.speakText)
+            .putString("speakFallback", n.speakFallback)
+            .putInt("speakDelaySec", n.speakDelaySec)
+            .putInt("speakRepeatMin", n.speakRepeatMin)
+            .putString("weatherName", n.weatherName)
+            .putString("weatherLat", n.weatherLat?.toString())
+            .putString("weatherLon", n.weatherLon?.toString())
             .apply()
     }
 }

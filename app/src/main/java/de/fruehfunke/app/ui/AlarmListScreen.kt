@@ -380,6 +380,7 @@ private fun AlarmCard(
                             alarm.label.takeIf { it.isNotBlank() },
                             TimeText.repeatSummary(alarm),
                             alarm.streamName?.let { "Radio: $it" },
+                            "Ansage".takeIf { alarm.speak },
                         )
                             .joinToString(" · "),
                         style = MaterialTheme.typography.titleSmall,
