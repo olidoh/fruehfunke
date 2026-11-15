@@ -126,6 +126,7 @@ jobs:
           python3 tools/play_upload.py \
             --package "$PACKAGE_NAME" \
             --aab "fruehfunke-${{ steps.check.outputs.name }}.aab" \
+            --apk "fruehfunke-${{ steps.check.outputs.name }}.apk" \
             --version-code "${{ steps.check.outputs.code }}" \
             --release-name "${{ steps.check.outputs.name }}" \
             --track "$TRACK" \

@@ -21,6 +21,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--package", required=True)
     p.add_argument("--aab", required=True)
+    p.add_argument("--apk", default="", help="Ausweichweg, wenn die App nicht bei Play App Signing angemeldet ist")
     p.add_argument("--version-code", required=True, type=int)
     p.add_argument("--release-name", required=True)
     p.add_argument("--track", default="internal")
@@ -41,11 +42,21 @@ def main():
         if a.version_code <= hoechste:
             sys.exit(f"FEHLER: versionCode {a.version_code} ist nicht höher als {hoechste}.")
 
-        bundle = edits.bundles().upload(
-            packageName=a.package, editId=edit_id,
-            media_body=MediaFileUpload(a.aab, mimetype="application/octet-stream", resumable=True),
-        ).execute()
-        print(f"Bundle hochgeladen: versionCode {bundle['versionCode']}, SHA-256 {bundle.get('sha256', '?')}")
+        try:
+            bundle = edits.bundles().upload(
+                packageName=a.package, editId=edit_id,
+                media_body=MediaFileUpload(a.aab, mimetype="application/octet-stream", resumable=True),
+            ).execute()
+            print(f"Bundle hochgeladen: versionCode {bundle['versionCode']}, SHA-256 {bundle.get('sha256', '?')}")
+        except HttpError as e:
+            if "Play Signing" not in str(e) or not a.apk:
+                raise
+            print("App ist nicht bei Play App Signing angemeldet – lade stattdessen die signierte APK hoch.")
+            apk = edits.apks().upload(
+                packageName=a.package, editId=edit_id,
+                media_body=MediaFileUpload(a.apk, mimetype="application/vnd.android.package-archive", resumable=True),
+            ).execute()
+            print(f"APK hochgeladen: versionCode {apk['versionCode']}")
 
         def set_track(status):
             release = {"name": a.release_name, "versionCodes": [str(a.version_code)], "status": status}
