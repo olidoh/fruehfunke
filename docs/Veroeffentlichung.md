@@ -1,4 +1,8 @@
-# Frühfunke veröffentlichen (Google Play, automatisiert)
+# Frühfunke veröffentlichen (Managed Google Play, automatisiert)
+
+Frühfunke ist seit 15.11.2026 eine **private App** über Managed Google Play – nur für die Organisation
+`LC049ol8fr` (oliver-dohrenbusch.de), verteilt über Intune wie easyTDD. Keine Tester, keine öffentliche
+Store-Prüfung. Private Apps lassen sich **nicht** mehr öffentlich machen.
 
 Jede Version wird über den Workflow `.github/workflows/build.yml` („Bauen & veröffentlichen“) gebaut.
 Er prüft Signatur, Paketname und Version, lädt auf Wunsch das App-Bundle zu Google Play hoch und legt
@@ -20,13 +24,19 @@ APK + AAB als GitHub-Release `v<Version>` ab.
 1. Änderungen sind auf `main` gepusht (jeder Push baut automatisch eine APK, ohne Upload).
 2. Workflow mit Upload starten:
    - **Claude / API:**
-     `gh api -X POST repos/olidoh/fruehfunke/actions/workflows/build.yml/dispatches -f ref=main -f 'inputs[upload]=true' -f 'inputs[track]=internal' -f 'inputs[notes]=Was ist neu'`
+     `gh api -X POST repos/olidoh/fruehfunke/actions/workflows/build.yml/dispatches -f ref=main -f 'inputs[upload]=true' -f 'inputs[track]=production' -f 'inputs[notes]=Was ist neu'`
    - **Von Hand:** GitHub › Actions › *Bauen & veröffentlichen* › **Run workflow** › Track wählen.
-3. Nach ca. 5 Minuten: Release `v1.0.<nr>` auf GitHub, Version im gewählten Track bei Google Play.
-   Interne Tester bekommen das Update über den Play Store meist innerhalb weniger Minuten.
+3. Nach ca. 5 Minuten: Release `v1.0.<nr>` auf GitHub, Version in Managed Google Play. Verwaltete Geräte
+   bekommen das Update je nach Update-Richtlinie in Intune meist innerhalb eines Tages.
 
-Tracks: `internal` = interner Test (bis 100 eingeladene Konten, keine Prüfung), `alpha`/`beta` = geschlossener/offener Test,
-`production` = öffentlich. Einen Release aus dem internen Test kann man in der Play Console auch direkt „hochstufen“.
+Tracks: `production` = alle verwalteten Geräte der Organisation (Standard), `internal` = interner Test.
+
+## Intune (einmalig)
+Intune Admin Center › Apps › Android › Hinzufügen › Managed Google Play-App › Frühfunke suchen (private Apps) ›
+**Genehmigen** › Synchronisieren › App dem Gerät/Benutzer zuweisen (Erforderlich oder Verfügbar).
+Bringt eine Version neue Berechtigungen mit und ist „Neue Berechtigungen automatisch genehmigen“ aus, die App erneut genehmigen.
+
+**Achtung Arbeitsprofil:** Läuft Frühfunke im Arbeitsprofil und werden die Arbeits-Apps pausiert, klingelt kein Wecker.
 
 Größerer Versionssprung (z. B. 1.1): `fruehfunke.version` in `gradle.properties` ändern, committen, pushen.
 

@@ -14,9 +14,9 @@ on:
         type: boolean
         default: true
       track:
-        description: 'Play-Track: internal = interner Test, production = öffentlich'
+        description: 'Play-Track: production = alle Geräte der Organisation (private App), internal = interner Test'
         type: choice
-        default: internal
+        default: production
         options: [internal, alpha, beta, production]
       notes:
         description: 'Was ist neu? (optional, erscheint bei Google Play)'
