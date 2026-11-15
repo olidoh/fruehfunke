@@ -38,7 +38,7 @@ object SpeechText {
             .replace("%min", w?.let { deg(it.min) } ?: "")
             .replace("%w", w?.let { report(it) } ?: "")
             .replace("%c", w?.let { deg(it.tempNow) } ?: "")
-            .replace("%z", w?.let { Weather.describe(it.codeDay) } ?: "")
+            .replace("%z", w?.condDay ?: "")
             .replace("%t", time)
             .replace("%D", now.format(DateTimeFormatter.ofPattern("d. MMMM", locale)))
             .replace("%d", now.format(DateTimeFormatter.ofPattern("EEEE", locale)))
@@ -57,9 +57,9 @@ object SpeechText {
 
     private fun report(w: Weather.Report): String {
         val where = if (w.place.isNotBlank()) "In ${w.place} ist es" else "Draußen ist es"
-        val nowPart = "$where zurzeit ${Weather.describe(w.codeNow)} bei ${deg(w.tempNow)}."
+        val nowPart = "$where zurzeit ${w.condNow} bei ${deg(w.tempNow)}."
         val minI = w.min.roundToInt()
-        val dayPart = "Heute ${Weather.describe(w.codeDay)}, ${if (minI < 0) "minus ${-minI}" else "$minI"} bis ${deg(w.max)}."
+        val dayPart = "Heute ${w.condDay}, ${if (minI < 0) "minus ${-minI}" else "$minI"} bis ${deg(w.max)}."
         val rain = w.rainChance?.takeIf { it >= 20 }?.let { " Regenwahrscheinlichkeit $it Prozent." } ?: ""
         return "$nowPart $dayPart$rain"
     }

@@ -65,7 +65,7 @@ import kotlin.math.roundToInt
 
 /** Kurzform fürs Display, z. B. „Bonn · bewölkt · 4° (2–9°)“. */
 fun weatherLine(w: Weather.Report): String =
-    "${w.place} · ${Weather.describe(w.codeNow)} · ${w.tempNow.roundToInt()}° " +
+    "${w.place} · ${w.condNow} · ${w.tempNow.roundToInt()}° " +
         "(${w.min.roundToInt()}–${w.max.roundToInt()}°)"
 
 /** Einstellungsbereich „Sprechende Uhr & Wetter“. */
@@ -114,7 +114,8 @@ fun SpeechSection() {
                 val w = weather
                 if (w != null && s.weatherName != null && w.place == s.weatherName) {
                     Text(
-                        weatherLine(w) + " · Stand " + TimeText.time(context, w.fetchedAt),
+                        weatherLine(w) + " · Stand " + TimeText.time(context, w.fetchedAt) +
+                            (if (w.station.isNotBlank()) "\nDWD-Station: ${w.station}" else ""),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -147,7 +148,7 @@ fun SpeechSection() {
             }
         }
         Text(
-            "Wetterdaten: Open-Meteo.com (kostenlos, ohne Anmeldung)",
+            "Wetterdaten: Deutscher Wetterdienst (offene Daten über Bright Sky) · Ortssuche: Open-Meteo",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

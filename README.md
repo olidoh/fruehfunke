@@ -27,5 +27,5 @@ Benötigte Secrets: `FRUEHFUNKE_KEYSTORE_B64` (Keystore, base64) und `FRUEHFUNKE
 - [x] Schritt 3: Steuerung beim Klingeln – Umdrehen, Schütteln (einstellbar, mit Sensortest), Power-Knopf,
       Annähern, Lautstärketasten (Lautstärke/Sperren/Schlummern/Stopp), Wischen oder lange gedrückte Tasten
 - [x] Schritt 4: Sprechende Uhr – Ansage mit Textbausteinen (Uhrzeit, Wochentag, Datum, Name, Wetter),
-      Weckton wird währenddessen leiser, Verzögerung und Wiederholung einstellbar; Wetter von Open-Meteo
-      (ohne API-Schlüssel) mit Ortssuche, Anzeige auf dem Weckbildschirm
+      Weckton wird währenddessen leiser, Verzögerung und Wiederholung einstellbar; Wetter vom Deutschen Wetterdienst
+      (offene DWD-Daten über Bright Sky, ohne API-Schlüssel) mit Ortssuche, Anzeige auf dem Weckbildschirm

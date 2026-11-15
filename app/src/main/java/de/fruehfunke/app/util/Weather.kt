@@ -10,18 +10,29 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
 
-/** Wetter über Open-Meteo (kostenlos, ohne API-Schlüssel). */
+/**
+ * Wetter vom Deutschen Wetterdienst (offene DWD-Daten über Bright Sky, ohne API-Schlüssel).
+ * Die Ortssuche nutzt den Geocoding-Dienst von Open-Meteo.
+ */
 object Weather {
     data class Place(val name: String, val region: String, val lat: Double, val lon: Double)
 
     data class Report(
         val place: String,
+        /** Name der DWD-Station, deren Messwerte benutzt wurden */
+        val station: String,
         val tempNow: Double,
-        val codeNow: Int,
+        /** Aktuelle Wetterlage als deutscher Text, z. B. „bedeckt“ */
+        val condNow: String,
         val max: Double,
         val min: Double,
-        val codeDay: Int,
+        /** Wetterlage für den Tag, z. B. „zeitweise Regen“ */
+        val condDay: String,
         val rainChance: Int?,
         val fetchedAt: Long,
     )
@@ -73,31 +84,108 @@ object Weather {
         return cached?.takeIf { now - it.fetchedAt < MAX_CACHE_AGE }
     }
 
+    /**
+     * Daten des Deutschen Wetterdienstes über Bright Sky (api.brightsky.dev):
+     * aktuelle Messwerte der nächstgelegenen DWD-Station und die stündliche DWD-Vorhersage (MOSMIX).
+     */
     private fun fetch(lat: Double, lon: Double, place: String): Report {
-        val url = "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
-            "&current=temperature_2m,weather_code" +
-            "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
-            "&forecast_days=1&timezone=auto"
-        val o = JSONObject(get(url))
-        val cur = o.getJSONObject("current")
-        val daily = o.getJSONObject("daily")
-        val rain = daily.optJSONArray("precipitation_probability_max")
+        val tz = "Europe%2FBerlin"
+        val current = JSONObject(get("https://api.brightsky.dev/current_weather?lat=$lat&lon=$lon&tz=$tz"))
+        val cw = current.getJSONObject("weather")
+        val station = current.optJSONArray("sources")?.optJSONObject(0)?.optString("station_name").orEmpty()
+
+        val today = LocalDate.now(ZoneId.of("Europe/Berlin"))
+        val day = JSONObject(
+            get("https://api.brightsky.dev/weather?lat=$lat&lon=$lon&date=$today&last_date=${today.plusDays(1)}&tz=$tz")
+        ).getJSONArray("weather")
+
+        val temps = mutableListOf<Double>()
+        val dayIcons = mutableListOf<String>()
+        val dayConditions = mutableListOf<String>()
+        var rainChance: Int? = null
+        val nowHour = LocalTime.now(ZoneId.of("Europe/Berlin")).hour
+        for (i in 0 until day.length()) {
+            val r = day.getJSONObject(i)
+            val hour = runCatching { OffsetDateTime.parse(r.getString("timestamp")).hour }.getOrDefault(12)
+            if (!r.isNull("temperature")) temps += r.getDouble("temperature")
+            if (hour in 7..20) {
+                r.optString("icon").takeIf { it.isNotBlank() && it != "null" }?.let { dayIcons += it }
+                r.optString("condition").takeIf { it.isNotBlank() && it != "null" }?.let { dayConditions += it }
+            }
+            if (hour >= nowHour && !r.isNull("precipitation_probability")) {
+                val p = r.getInt("precipitation_probability")
+                rainChance = maxOf(rainChance ?: 0, p)
+            }
+        }
+        val tempNow = if (cw.isNull("temperature")) temps.firstOrNull() ?: 0.0 else cw.getDouble("temperature")
         return Report(
             place = place,
-            tempNow = cur.getDouble("temperature_2m"),
-            codeNow = cur.getInt("weather_code"),
-            max = daily.getJSONArray("temperature_2m_max").getDouble(0),
-            min = daily.getJSONArray("temperature_2m_min").getDouble(0),
-            codeDay = daily.getJSONArray("weather_code").getInt(0),
-            rainChance = if (rain == null || rain.isNull(0)) null else rain.getInt(0),
+            station = station,
+            tempNow = tempNow,
+            condNow = describeNow(cw.optString("condition"), cw.optString("icon")),
+            max = temps.maxOrNull() ?: tempNow,
+            min = temps.minOrNull() ?: tempNow,
+            condDay = describeDay(dayConditions, dayIcons),
+            rainChance = rainChance,
             fetchedAt = System.currentTimeMillis(),
         )
+    }
+
+    private fun describeNow(condition: String, icon: String): String = when (condition) {
+        "thunderstorm" -> "Gewitter"
+        "hail" -> "Hagel"
+        "snow" -> "Schneefall"
+        "sleet" -> "Schneeregen"
+        "rain" -> "Regen"
+        "fog" -> "neblig"
+        else -> describeIcon(icon)
+    }
+
+    private fun describeIcon(icon: String): String = when (icon) {
+        "clear-day" -> "sonnig"
+        "clear-night" -> "klar"
+        "partly-cloudy-day", "partly-cloudy-night" -> "teilweise bewölkt"
+        "cloudy" -> "bedeckt"
+        "fog" -> "neblig"
+        "wind" -> "windig"
+        "rain" -> "Regen"
+        "sleet" -> "Schneeregen"
+        "snow" -> "Schneefall"
+        "hail" -> "Hagel"
+        "thunderstorm" -> "Gewitter"
+        else -> "wechselhaft"
+    }
+
+    /** Fasst die Stunden von 7 bis 20 Uhr zu einer Tageswetterlage zusammen. */
+    private fun describeDay(conditions: List<String>, icons: List<String>): String {
+        val wet = conditions.count { it == "rain" || it == "sleet" }
+        return when {
+            "thunderstorm" in conditions -> "Gewitter möglich"
+            "hail" in conditions -> "Hagel möglich"
+            conditions.count { it == "snow" } >= 3 -> "Schneefall"
+            "snow" in conditions -> "zeitweise Schnee"
+            wet >= 5 -> "regnerisch"
+            wet >= 1 -> "zeitweise Regen"
+            icons.isEmpty() -> "wechselhaft"
+            else -> {
+                val clear = icons.count { it.startsWith("clear") }
+                val cloudy = icons.count { it == "cloudy" }
+                val fog = icons.count { it == "fog" }
+                when {
+                    fog * 2 >= icons.size -> "neblig"
+                    clear * 2 >= icons.size -> "sonnig"
+                    cloudy * 2 >= icons.size -> "bedeckt"
+                    else -> "wechselnd bewölkt"
+                }
+            }
+        }
     }
 
     private fun get(url: String): String {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 8_000
         conn.readTimeout = 8_000
+        conn.setRequestProperty("User-Agent", "Fruehfunke-Wecker/1.0 (Android)")
         return try {
             conn.inputStream.bufferedReader().use { it.readText() }
         } finally {
@@ -106,44 +194,19 @@ object Weather {
     }
 
     private fun toJson(r: Report) = JSONObject()
-        .put("place", r.place).put("tempNow", r.tempNow).put("codeNow", r.codeNow)
-        .put("max", r.max).put("min", r.min).put("codeDay", r.codeDay)
+        .put("place", r.place).put("station", r.station).put("tempNow", r.tempNow).put("condNow", r.condNow)
+        .put("max", r.max).put("min", r.min).put("condDay", r.condDay)
         .put("rainChance", r.rainChance ?: -1).put("fetchedAt", r.fetchedAt)
 
     private fun fromJson(o: JSONObject) = Report(
         place = o.getString("place"),
+        station = o.optString("station"),
         tempNow = o.getDouble("tempNow"),
-        codeNow = o.getInt("codeNow"),
+        condNow = o.getString("condNow"),
         max = o.getDouble("max"),
         min = o.getDouble("min"),
-        codeDay = o.getInt("codeDay"),
+        condDay = o.getString("condDay"),
         rainChance = o.optInt("rainChance", -1).takeIf { it >= 0 },
         fetchedAt = o.getLong("fetchedAt"),
     )
-
-    /** WMO-Wettercode als deutscher Text. */
-    fun describe(code: Int): String = when (code) {
-        0 -> "sonnig und klar"
-        1 -> "überwiegend klar"
-        2 -> "teilweise bewölkt"
-        3 -> "bedeckt"
-        45, 48 -> "neblig"
-        51, 53, 55 -> "Nieselregen"
-        56, 57 -> "gefrierender Nieselregen"
-        61 -> "leichter Regen"
-        63 -> "Regen"
-        65 -> "starker Regen"
-        66, 67 -> "gefrierender Regen"
-        71 -> "leichter Schneefall"
-        73 -> "Schneefall"
-        75 -> "starker Schneefall"
-        77 -> "Schneegriesel"
-        80 -> "leichte Regenschauer"
-        81 -> "Regenschauer"
-        82 -> "heftige Regenschauer"
-        85, 86 -> "Schneeschauer"
-        95 -> "Gewitter"
-        96, 99 -> "Gewitter mit Hagel"
-        else -> "wechselhaft"
-    }
 }
