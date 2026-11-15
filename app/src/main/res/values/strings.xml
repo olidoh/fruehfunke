@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Frühfunke</string>
+    <string name="widget_description">Nächster Wecker, Wetter und die folgenden Weckzeiten</string>
 </resources>

@@ -30,6 +30,20 @@ class FruehfunkeApp : Application() {
         Notifications.createChannels(this)
         AlarmScheduler.rescheduleAll(this)
         startAutoSync()
+        startWidgetUpdates()
+    }
+
+    /** Widget neu zeichnen, sobald sich Wecker, Wetter oder Ort ändern. */
+    @OptIn(FlowPreview::class)
+    private fun startWidgetUpdates() {
+        appScope.launch {
+            combine(AlarmRepository.alarms, de.fruehfunke.app.util.Weather.latest, AppSettings.state) { a, w, s ->
+                Triple(a, w, s.weatherName)
+            }
+                .distinctUntilChanged()
+                .debounce(500)
+                .collect { runCatching { de.fruehfunke.app.widget.FruehfunkeWidget.refresh(this@FruehfunkeApp) } }
+        }
     }
 
     /** Schreibt Änderungen an Weckern und Sendern automatisch in die gewählte Sicherungsdatei. */

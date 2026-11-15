@@ -29,3 +29,5 @@ Benötigte Secrets: `FRUEHFUNKE_KEYSTORE_B64` (Keystore, base64) und `FRUEHFUNKE
 - [x] Schritt 4: Sprechende Uhr – Ansage mit Textbausteinen (Uhrzeit, Wochentag, Datum, Name, Wetter),
       Weckton wird währenddessen leiser, Verzögerung und Wiederholung einstellbar; Wetter vom Deutschen Wetterdienst
       (offene DWD-Daten über Bright Sky, ohne API-Schlüssel) mit Ortssuche, Anzeige auf dem Weckbildschirm
+
+- [x] Widget für den Startbildschirm (Glance, Material You): nächster Wecker, DWD-Wetter, folgende Weckzeiten

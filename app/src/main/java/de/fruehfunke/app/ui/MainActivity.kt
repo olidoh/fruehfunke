@@ -46,16 +46,29 @@ import de.fruehfunke.app.util.TimeText
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_EDIT_ALARM = "edit_alarm"
+        /** Wecker, dessen Editor geöffnet werden soll (z. B. aus dem Widget) */
+        val pendingEdit = kotlinx.coroutines.flow.MutableStateFlow<Int?>(null)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent { FruehfunkeTheme { AppRoot() } }
+        handleWidgetIntent(intent)
         handleImportIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        handleWidgetIntent(intent)
         handleImportIntent(intent)
+    }
+
+    private fun handleWidgetIntent(intent: Intent?) {
+        val id = intent?.getIntExtra(EXTRA_EDIT_ALARM, 0) ?: 0
+        if (id > 0) pendingEdit.value = id
     }
 
     /** Sicherungsdatei, die aus einer anderen App (z. B. OneDrive) geöffnet oder geteilt wurde. */
@@ -117,6 +130,14 @@ private fun AppRoot() {
     LaunchedEffect(Unit) { de.fruehfunke.app.util.Weather.refresh() }
 
     BackHandler(enabled = route != "list") { route = "list" }
+
+    val editRequest by MainActivity.pendingEdit.collectAsStateWithLifecycle()
+    LaunchedEffect(editRequest) {
+        editRequest?.let { id ->
+            if (AlarmRepository.get(id) != null) route = "edit:$id"
+            MainActivity.pendingEdit.value = null
+        }
+    }
 
     val showSaved: (Alarm) -> Unit = { alarm ->
         val t = AlarmScheduler.nextTrigger(alarm)
