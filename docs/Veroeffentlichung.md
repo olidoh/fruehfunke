@@ -11,7 +11,7 @@ APK + AAB als GitHub-Release `v<Version>` ab.
 | Paketname | `de.fruehfunke.app` |
 | Signaturschlüssel | `fruehfunke-release.jks`, Alias `fruehfunke`, CN=Fruehfunke |
 | Zertifikat SHA-256 | `22:BC:F0:36:B9:62:D2:4D:F3:71:CD:33:63:06:F5:CF:06:AE:F8:A2:07:BB:B5:15:AC:5E:8B:90:9F:C0:3A:78` |
-| Play App Signing | **mit eigenem Schlüssel** (derselbe Keystore als App-Signaturschlüssel *und* Upload-Schlüssel). Nur so lassen sich Play-Version und GitHub-APK gegenseitig als Update installieren. |
+| Play App Signing | **nicht angemeldet** (Stand 15.11.2026). Der Workflow lädt dann die mit dem eigenen Schlüssel signierte **APK** hoch – Play-Version und GitHub-APK sind identisch signiert. Falls Google später ein App-Bundle verlangt: Play App Signing **mit eigenem Schlüssel** (PEPK, siehe unten) einrichten, dann lädt der Workflow automatisch das AAB hoch. |
 | versionCode | Laufnummer dieses Workflows (`github.run_number`) – Datei `build.yml` deshalb nie umbenennen |
 | versionName | `<fruehfunke.version aus gradle.properties>.<versionCode>`, z. B. `1.0.12` |
 
@@ -35,8 +35,9 @@ Größerer Versionssprung (z. B. 1.1): `fruehfunke.version` in `gradle.propertie
 ### 1. App in der Play Console anlegen
 Play Console › **App erstellen**: Name „Frühfunke“, Standardsprache Deutsch, App, kostenlos.
 
-### 2. Play App Signing mit eigenem Schlüssel
-Beim ersten Release (Testen › Interner Test › Neuen Release erstellen) bei „App-Signatur“
+### 2. Play App Signing (optional, nur falls Google ein App-Bundle verlangt)
+Ohne Play App Signing nimmt Google für Frühfunke die APK an (so läuft es aktuell). Wird ein App-Bundle Pflicht:
+Unter *Test und Release › App-Integrität › Play App Signing* bzw. beim nächsten Release (Testen › Interner Test › Neuen Release erstellen) bei „App-Signatur“
 **„Signaturschlüssel ändern“ › „Schlüssel aus Java-Schlüsselspeicher exportieren und hochladen“** wählen.
 Die Console zeigt einen fertigen Befehl mit `pepk.jar` und dem Verschlüsselungsschlüssel; diesen auf dem PC im Ordner
 mit `fruehfunke-release.jks` ausführen (Alias `fruehfunke`, Passwort aus `LIESMICH-Signierschluessel.txt`) und die
@@ -78,6 +79,7 @@ Texte: `play/store-text.md` · Symbol 512×512: `play/icon-512.png` · Feature-G
 |---|---|
 | `FALSCHE SIGNATUR` | Secret `FRUEHFUNKE_KEYSTORE_B64` enthält einen anderen Keystore. Sollwert **nicht** ändern. |
 | `versionCode … nicht höher` | Bei Google Play liegt schon eine höhere Version → Workflow erneut starten (neue Laufnummer). |
+| `For uploading an AppBundle you must be enrolled in Play Signing` | Nur Hinweis: der Workflow weicht automatisch auf die APK aus. Schlägt auch das fehl → Schritt 2. |
 | `Package not found` / 404 | App noch nicht angelegt oder erstes Bundle noch nicht von Hand hochgeladen (Schritte 1–3). |
 | HTTP 403 / `caller does not have permission` | Dienstkonto in der Play Console nicht für Frühfunke freigegeben (Schritt 4), teils bis 24 h Wartezeit. |
 | `PLAY_SERVICE_ACCOUNT_JSON fehlt` | Secret im Repo `olidoh/fruehfunke` anlegen (Schritt 4). |
