@@ -15,7 +15,7 @@ enum class Perm(val title: String, val description: String, val critical: Boolea
     NOTIFICATIONS("Benachrichtigungen", "Ohne sie kann der klingelnde Wecker nicht angezeigt werden.", true),
     FULL_SCREEN("Vollbild beim Wecken", "Zeigt den Weckbildschirm auch auf dem Sperrbildschirm.", true),
     EXACT_ALARMS("Exakte Wecker", "Damit der Wecker auf die Minute genau klingelt.", true),
-    BATTERY("Akku-Optimierung aus", "Empfohlen, damit Android die App nachts nicht einschränkt.", false),
+    BATTERY("Akku-Optimierung aus", "Empfohlen: in der Liste „Alle Apps“ Frühfunke auf „Nicht optimieren“ stellen.", false),
 }
 
 object Permissions {
@@ -41,7 +41,7 @@ object Permissions {
                 Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg)
             else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg)
             Perm.EXACT_ALARMS -> Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg)
-            Perm.BATTERY -> Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, pkg)
+            Perm.BATTERY -> Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
         }
     }
 }

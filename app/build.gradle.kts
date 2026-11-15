@@ -10,7 +10,9 @@ plugins {
 // als Update über die alte installiert werden kann.
 val keystorePath: String? = System.getenv("FRUEHFUNKE_KEYSTORE")
 val hasReleaseKey = keystorePath != null && file(keystorePath).exists()
+// versionCode = Laufnummer des Workflows "Bauen & veröffentlichen" – steigt immer, wie Google Play es verlangt
 val buildNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+val baseVersion = (project.findProperty("fruehfunke.version") as String?) ?: "1.0"
 
 android {
     namespace = "de.fruehfunke.app"
@@ -21,7 +23,7 @@ android {
         minSdk = 33
         targetSdk = 36
         versionCode = buildNumber
-        versionName = "0.1.$buildNumber"
+        versionName = "$baseVersion.$buildNumber"
     }
 
     signingConfigs {

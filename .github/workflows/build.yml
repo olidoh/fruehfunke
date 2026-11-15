@@ -1,18 +1,61 @@
-name: APK bauen
+# Frühfunke: bei jedem Push auf main APK bauen und als GitHub-Release ablegen.
+# Über "Run workflow" (oder per API) zusätzlich das App-Bundle zu Google Play hochladen.
+# Ablauf und Regeln: docs/Veroeffentlichung.md
+# Dateiname nicht ändern: die Laufnummer dieses Workflows ist der versionCode.
+name: Bauen & veröffentlichen
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      upload:
+        description: 'Zu Google Play hochladen'
+        type: boolean
+        default: true
+      track:
+        description: 'Play-Track: internal = interner Test, production = öffentlich'
+        type: choice
+        default: internal
+        options: [internal, alpha, beta, production]
+      notes:
+        description: 'Was ist neu? (optional, erscheint bei Google Play)'
+        type: string
+        default: ''
 
 permissions:
   contents: write
 
+concurrency:
+  group: build-release
+  cancel-in-progress: false
+
+env:
+  PACKAGE_NAME: de.fruehfunke.app
+  # SHA-256 des Frühfunke-Zertifikats (CN=Fruehfunke). NIE ändern – andere Signatur = kein Update möglich.
+  EXPECTED_CERT_SHA256: 22bcf036b962d24df371cd336306f5cf06aef8a207bbb515ac5e8b909fc03a78
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+
+      - name: Pflicht-Secrets prüfen
+        env:
+          KEYSTORE_B64: ${{ secrets.FRUEHFUNKE_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.FRUEHFUNKE_KEYSTORE_PASSWORD }}
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          WANT_UPLOAD: ${{ github.event_name == 'workflow_dispatch' && inputs.upload }}
+        run: |
+          fehlt=0
+          [ -n "$KEYSTORE_B64" ] || { echo "::error::GitHub-Secret FRUEHFUNKE_KEYSTORE_B64 fehlt"; fehlt=1; }
+          [ -n "$KEYSTORE_PASSWORD" ] || { echo "::error::GitHub-Secret FRUEHFUNKE_KEYSTORE_PASSWORD fehlt"; fehlt=1; }
+          if [ "$WANT_UPLOAD" = "true" ] && [ -z "$PLAY_JSON" ]; then
+            echo "::error::GitHub-Secret PLAY_SERVICE_ACCOUNT_JSON fehlt (für den Upload zu Google Play)"; fehlt=1
+          fi
+          exit $fehlt
 
       - uses: actions/setup-java@v4
         with:
@@ -27,31 +70,81 @@ jobs:
         env:
           KEYSTORE_B64: ${{ secrets.FRUEHFUNKE_KEYSTORE_B64 }}
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
-            echo "FRUEHFUNKE_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
-          else
-            echo "::warning::Kein Signierschlüssel hinterlegt – APK wird mit wechselndem Debug-Schlüssel signiert (Updates nur nach Deinstallation)."
-          fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "FRUEHFUNKE_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
-      - name: APK bauen
+      - name: APK und App-Bundle bauen
         env:
           FRUEHFUNKE_KEYSTORE_PASSWORD: ${{ secrets.FRUEHFUNKE_KEYSTORE_PASSWORD }}
-        run: gradle assembleRelease --no-daemon --stacktrace
+        run: gradle assembleRelease bundleRelease --no-daemon --stacktrace
 
-      - name: APK benennen
-        run: cp app/build/outputs/apk/release/app-release.apk "fruehfunke-${{ github.run_number }}.apk"
+      - name: Paket, Version und Signatur prüfen
+        id: check
+        run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          aab=app/build/outputs/bundle/release/app-release.aab
+          test -f "$apk" && test -f "$aab" || { echo "::error::APK oder AAB nicht gefunden"; exit 1; }
+          bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$bt/apksigner" verify --print-certs "$apk" > certs.txt
+          digests=$(grep 'certificate SHA-256 digest' certs.txt | awk '{print $NF}' | tr 'A-F' 'a-f' | sort -u)
+          n=$(printf '%s\n' "$digests" | grep -c .)
+          ist=$(printf '%s\n' "$digests" | head -1)
+          if [ "$n" != "1" ] || [ "$ist" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::FALSCHE SIGNATUR (APK). Erwartet $EXPECTED_CERT_SHA256, gefunden $ist. Abbruch."; exit 1
+          fi
+          aabsig=$(keytool -printcert -jarfile "$aab" 2>/dev/null | grep -m1 'SHA256:' | awk '{print $2}' | tr -d ':' | tr 'A-F' 'a-f')
+          if [ "$aabsig" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::FALSCHE SIGNATUR (AAB). Erwartet $EXPECTED_CERT_SHA256, gefunden $aabsig. Abbruch."; exit 1
+          fi
+          badging=$("$bt/aapt2" dump badging "$apk" | head -1)
+          echo "$badging"
+          echo "$badging" | grep -q "package: name='$PACKAGE_NAME'" || { echo "::error::Falscher Paketname"; exit 1; }
+          code=$(echo "$badging" | grep -oP "versionCode='\K[0-9]+")
+          name=$(echo "$badging" | grep -oP "versionName='\K[^']+")
+          [ "$code" = "${{ github.run_number }}" ] || { echo "::error::versionCode $code passt nicht zur Laufnummer"; exit 1; }
+          cp "$apk" "fruehfunke-$name.apk"
+          cp "$aab" "fruehfunke-$name.aab"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "Signatur OK, Version $name ($code)"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: fruehfunke-${{ github.run_number }}
-          path: fruehfunke-*.apk
+          name: fruehfunke-${{ steps.check.outputs.name }}
+          path: |
+            fruehfunke-${{ steps.check.outputs.name }}.apk
+            fruehfunke-${{ steps.check.outputs.name }}.aab
 
-      - name: Als Release veröffentlichen
+      - name: Zu Google Play hochladen
+        if: github.event_name == 'workflow_dispatch' && inputs.upload
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          NOTES: ${{ inputs.notes }}
+          TRACK: ${{ inputs.track }}
+        run: |
+          pip install --quiet google-api-python-client google-auth
+          python3 tools/play_upload.py \
+            --package "$PACKAGE_NAME" \
+            --aab "fruehfunke-${{ steps.check.outputs.name }}.aab" \
+            --version-code "${{ steps.check.outputs.code }}" \
+            --release-name "${{ steps.check.outputs.name }}" \
+            --track "$TRACK" \
+            --notes "$NOTES"
+
+      - name: GitHub-Release mit APK
         env:
           GH_TOKEN: ${{ github.token }}
+          PLAY: ${{ github.event_name == 'workflow_dispatch' && inputs.upload && inputs.track || '' }}
         run: |
-          gh release create "build-${{ github.run_number }}" fruehfunke-*.apk \
-            --title "Frühfunke Build ${{ github.run_number }}" \
-            --notes "Automatisch gebaut aus ${{ github.sha }}." \
+          notes="Signatur SHA-256: $EXPECTED_CERT_SHA256 – lässt sich als Update über jede andere Frühfunke-Version installieren."
+          [ -n "$PLAY" ] && notes="Bei Google Play veröffentlicht (Track: $PLAY). $notes"
+          gh release create "v${{ steps.check.outputs.name }}" \
+            "fruehfunke-${{ steps.check.outputs.name }}.apk" "fruehfunke-${{ steps.check.outputs.name }}.aab" \
+            --target "$GITHUB_SHA" \
+            --title "Frühfunke ${{ steps.check.outputs.name }}" \
+            --notes "$notes" \
             --latest
+
+      - name: Aufräumen
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
